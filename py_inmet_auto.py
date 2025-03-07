@@ -1,3 +1,5 @@
+#!/bin/env python
+
 import os
 import pandas as pd
 import numpy as np
@@ -6,7 +8,6 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import pyautogui
 import time
 from datetime import datetime, timedelta
 from webdriver_manager.chrome import ChromeDriverManager
@@ -23,36 +24,10 @@ csv_filename = "final_inmet_data.csv"
 data_inicial = datetime.strptime(data_inicial_str, "%d/%m/%Y") if data_inicial_str else None
 data_final = datetime.strptime(data_final_str, "%d/%m/%Y") if data_final_str else datetime.today()
 
-# Função para tentar inicializar o WebDriver
-def initialize_webdriver(webdriver_paths):
-    for path in webdriver_paths:
-        if os.path.exists(path):
-            try:
-                driver = webdriver.Chrome(service=Service(path))
-                print(f"WebDriver inicializado com sucesso usando o caminho: {path}")
-                return driver
-            except Exception as e:
-                print(f"Erro ao inicializar o WebDriver com o caminho {path}: {e}")
-    # Se nenhum caminho funcionar, utiliza o webdriver-manager
-    try:
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
-        print("WebDriver inicializado com sucesso usando o webdriver-manager")
-        return driver
-    except Exception as e:
-        raise FileNotFoundError("Nenhum WebDriver foi encontrado nos caminhos especificados, e o webdriver-manager falhou: ", e)
-
-# Lista de caminhos possíveis para o WebDriver
-webdriver_paths = [
-    "C:\\ProgramData\\chromedriver\\chromedriver.exe",  # Caminho fornecido por você
-    "C:\\Program Files\\Google\\Chrome\\Application\\chromedriver.exe",
-    "C:\\chromedriver\\chromedriver.exe",  # Adicione outros caminhos possíveis aqui
-    "/usr/local/bin/chromedriver",         # Exemplo para Linux/Mac
-]
-
 # Tenta inicializar o WebDriver com os caminhos definidos
 try:
-    driver = initialize_webdriver(webdriver_paths)
-except FileNotFoundError as e:
+    driver = webdriver.Chrome()
+except BaseException as e:
     print(e)
     exit(1)
 

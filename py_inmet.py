@@ -1,4 +1,8 @@
+#!/bin/env python
+
 import os
+import sys
+import time
 import pandas as pd
 import numpy as np
 from selenium import webdriver
@@ -6,64 +10,13 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import pyautogui
-import time
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service as ChromeService
 from datetime import datetime, timedelta
 from webdriver_manager.chrome import ChromeDriverManager
 
-# Solicita os inputs do usuário
-estacao = input("Digite o código da estação ou deixe em branco para usar todas as estações do arquivo existente: ")
-data_inicial_str = input("Digite a data inicial (dd/mm/aaaa) ou deixe em branco para usar a última data disponível: ")
-data_final_str = input("Digite a data final (dd/mm/aaaa) ou deixe em branco para usar a data atual: ")
-
-# Define o nome do arquivo CSV de saída
-csv_filename = "final_inmet_data.csv"
-
-# Converte as strings de data para objetos datetime
-data_inicial = datetime.strptime(data_inicial_str, "%d/%m/%Y") if data_inicial_str else None
-data_final = datetime.strptime(data_final_str, "%d/%m/%Y") if data_final_str else datetime.today()
-
-# Função para tentar inicializar o WebDriver
-def initialize_webdriver(webdriver_paths):
-    for path in webdriver_paths:
-        if os.path.exists(path):
-            try:
-                driver = webdriver.Chrome(service=Service(path))
-                print(f"WebDriver inicializado com sucesso usando o caminho: {path}")
-                return driver
-            except Exception as e:
-                print(f"Erro ao inicializar o WebDriver com o caminho {path}: {e}")
-    # Se nenhum caminho funcionar, utiliza o webdriver-manager
-    try:
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
-        print("WebDriver inicializado com sucesso usando o webdriver-manager")
-        return driver
-    except Exception as e:
-        raise FileNotFoundError("Nenhum WebDriver foi encontrado nos caminhos especificados, e o webdriver-manager falhou: ", e)
-
-# Lista de caminhos possíveis para o WebDriver
-webdriver_paths = [
-    "C:\\ProgramData\\chromedriver\\chromedriver.exe",  # Caminho fornecido por você
-    "C:\\Program Files\\Google\\Chrome\\Application\\chromedriver.exe",
-    "C:\\chromedriver\\chromedriver.exe",  # Adicione outros caminhos possíveis aqui
-    "/usr/local/bin/chromedriver",         # Exemplo para Linux/Mac
-]
-
-# Tenta inicializar o WebDriver com os caminhos definidos
-try:
-    driver = initialize_webdriver(webdriver_paths)
-except FileNotFoundError as e:
-    print(e)
-    exit(1)
-
-# Verifica se está em um ambiente virtual
-if 'VIRTUAL_ENV' in os.environ:
-    print("Está em um ambiente virtual")
-else:
-    print("Não está em um ambiente virtual")
-
 # Função principal para processar os dados de uma estação
-def process_station(estacao, data_inicial, data_final):
+def process_station(estacao, data_inicial, data_final, metadados):
     # Carrega os dados existentes do CSV para verificar a última data por estação, se necessário
     if os.path.exists(csv_filename):
         df_existing = pd.read_csv(csv_filename, delimiter=';', parse_dates=['data'], dayfirst=True)
@@ -81,10 +34,10 @@ def process_station(estacao, data_inicial, data_final):
             data_inicial = datetime.strptime("01/06/2024", "%d/%m/%Y")
 
     # Variáveis para metadados da estação
-    file_path = "G:/Meu Drive/CID/Raspagem/chuvas/CatalogoEstaçõesAutomáticas.csv"
+    # metadados = "G:/Meu Drive/CID/Raspagem/chuvas/CatalogoEstaçõesAutomáticas.csv"
 
     # Carrega o catálogo de estações com o delimitador correto
-    stations_df = pd.read_csv(file_path, header=None, delimiter=';')
+    stations_df = pd.read_csv(metadados, header=None, delimiter=';')
 
     # Define as colunas com base na descrição
     station_code_col = 7  # Coluna 8 (índice 7)
@@ -143,13 +96,18 @@ def process_station(estacao, data_inicial, data_final):
     # Extrai os dados da tabela
     try:
         table = wait.until(EC.presence_of_element_located((By.TAG_NAME, "table")))
+        print("Achou tabela")
         rows = table.find_elements(By.TAG_NAME, "tr")
+        print(f"{len(rows)} linhas")
         data = []
         for row in rows:
             cols = row.find_elements(By.TAG_NAME, "td")
             cols = [ele.text.strip() for ele in cols]
             if any(cols):  # Filtra linhas vazias
                 data.append([ele for ele in cols if ele])
+            #    print("Linha com coisa")
+            #else:
+            #    print("Linha VAZIA")
     except Exception as e:
         print(f"Erro ao extrair dados da tabela para a estação {estacao}: ", e)
         return
@@ -283,24 +241,71 @@ def process_station(estacao, data_inicial, data_final):
     except Exception as e:
         print(f"Erro ao salvar os dados para a estação {estacao}: ", e)
 
-# Verifica se uma estação foi especificada
-if estacao:
-    # Processa apenas a estação especificada
-    process_station(estacao, data_inicial, data_final)
-else:
-    # Carrega o arquivo CSV existente para verificar as estações já processadas
-    if os.path.exists(csv_filename):
-        df_existing = pd.read_csv(csv_filename, delimiter=';', parse_dates=['data'], dayfirst=True)
-        df_existing['data'] = pd.to_datetime(df_existing['data'], errors='coerce', format='%d/%m/%Y %H:%M:%S')
-        estações_existentes = df_existing['station'].unique()
+if __name__ == '__main__':
+    headless = False
 
-        # Processa cada estação existente no arquivo CSV
-        for estacao in estações_existentes:
-            # Definir as datas inicial e final para cada estação individualmente
-            process_station(estacao, data_inicial=None, data_final=data_final)
-    else:
-        print("Nenhuma estação especificada e nenhum arquivo CSV existente encontrado.")
+    scriptdir = os.path.dirname(sys.argv[0])
+    metadados = os.path.join(scriptdir, "CatalogoEstacoesAutomaticas.csv")
+    args = sys.argv[1:]
+    try:
+        if args[0] == "-h":
+            headless = True
+            args = args[1:]
+    except:
+        pass
+    try:
+        estacao = args[0]
+        data_inicial_str = args[1]
+        data_final_str = args[2]
+    except:
+        # Solicita os inputs do usuário
+        estacao = input("Digite o código da estação ou deixe em branco para usar todas as estações do arquivo existente: ")
+        data_inicial_str = input("Digite a data inicial (dd/mm/aaaa) ou deixe em branco para usar a última data disponível: ")
+        data_final_str = input("Digite a data final (dd/mm/aaaa) ou deixe em branco para usar a data atual: ")
+
+    # Define o nome do arquivo CSV de saída
+    csv_filename = "final_inmet_data.csv"
+
+    # Converte as strings de data para objetos datetime
+    data_inicial = datetime.strptime(data_inicial_str, "%d/%m/%Y") if data_inicial_str else None
+    data_final = datetime.strptime(data_final_str, "%d/%m/%Y") if data_final_str else datetime.today()
+
+    # Tenta inicializar o WebDriver com os caminhos definidos
+    try:
+        if headless:
+            options = Options()
+            options.add_argument("--headless")
+            driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options = options)
+        else:
+            driver = webdriver.Chrome()
+    except FileNotFoundError as e:
+        print(e)
         exit(1)
 
-# Finaliza o WebDriver
-driver.quit()
+    # Verifica se está em um ambiente virtual
+    if 'VIRTUAL_ENV' in os.environ:
+        print("Está em um ambiente virtual")
+    else:
+        print("Não está em um ambiente virtual")
+
+    # Verifica se uma estação foi especificada
+    if estacao:
+        # Processa apenas a estação especificada
+        process_station(estacao, data_inicial, data_final, metadados)
+    else:
+        # Carrega o arquivo CSV existente para verificar as estações já processadas
+        if os.path.exists(csv_filename):
+            df_existing = pd.read_csv(csv_filename, delimiter=';', parse_dates=['data'], dayfirst=True)
+            df_existing['data'] = pd.to_datetime(df_existing['data'], errors='coerce', format='%d/%m/%Y %H:%M:%S')
+            estações_existentes = df_existing['station'].unique()
+
+            # Processa cada estação existente no arquivo CSV
+            for estacao in estações_existentes:
+                # Definir as datas inicial e final para cada estação individualmente
+                process_station(estacao, None, data_final, metadados)
+        else:
+            print("Nenhuma estação especificada e nenhum arquivo CSV existente encontrado.")
+            exit(1)
+
+    # Finaliza o WebDriver
+    driver.quit()
